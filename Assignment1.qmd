@@ -4,7 +4,7 @@ subtitle: "Assignment 1"
 author: "Isabelle Mortillaro"
 format:     
   revealjs: 
-    transition: fade                   
+    transition: fade                    
     smaller: true   
     scrollable: true
     chalkboard:   
