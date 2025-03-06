@@ -1,0 +1,398 @@
+---
+title: "Computational Tools for Macroeconometrics"
+subtitle: "Assignment 1"
+author: "Isabelle Mortillaro"
+format:     
+  revealjs: 
+    transition: fade                   
+    smaller: true   
+    scrollable: true
+    chalkboard:   
+      theme: chalkboard
+    theme: dark   
+    page-layout: article    
+    # slide-tone: true  
+---  
+     
+# Prediction of Key Economic Indicators {background="#2A2E35"}
+      
+## Analysis of the Dataset    
+
+```{r, echo = TRUE}
+
+library(readr) 
+library(dplyr)   
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+
+#Load the dataset:
+df <- read_csv("current.csv")
+View(df)
+library(knitr)  
+knitr::kable(head(df)) 
+
+#Dimensions of the dataset:
+dimensions=dim(df)
+cat("Dimensions Dataset : ", dimensions )
+
+```
+
+## Cleaning the Dataset
+
+- Extraction of the `transformation codes`, used to modify the economic indicators before forecasting:
+
+```{r, echo = TRUE}
+
+#Removing the first row of the dataset, which contains the transformation codes and storing them in a data frame:
+transformation_codes <- data.frame(Series = names(df)[-1], Transformation_Code = as.numeric(df[1, -1]))
+transformation_codes
+
+```
+
+- Constructing a **first function** calculating the *first difference*, which helps removing the trends by subtracting the previous value from the current value:
+
+```{r, echo = TRUE}
+
+mdiff <- function(x) {
+  x - dplyr::lag(x, 1, default = NA)  #First difference (ΔX_t = X_t - X_(t-1))
+}
+
+```
+
+## Applying the Transformations
+
+- Constructing a **second function** which applies the transformations, based on the following codes:
+
+::: nonincremental
+-   $1$: No transformation (Raw data remains unchanged)
+-   $2$: First difference → Removes trends (e.g., ΔX = X_t - X_(t-1))
+-   $3$: Second difference → Removes stronger trends
+-   $4$: Log transformation → Stabilizes variance (good for exponentially growing data)
+-   $5$: Log first difference → Used when data follows an exponential trend
+-   $6$: Log second difference → Removes trend and stabilizes variance
+-   $7$: Percentage change → Useful for financial/economic indicators
+:::
+  
+```{r, echo = TRUE}
+
+apply_transformation <- function(series, code) {
+  if (code == 1) {
+    return(series)
+  } else if (code == 2) {
+    return(mdiff(series))
+  } else if (code == 3) {
+    return(mdiff(mdiff(series)))
+  } else if (code == 4) {
+    return(log(series))
+  } else if (code == 5) {
+    return(mdiff(log(series)))
+  } else if (code == 6) {
+    return(mdiff(mdiff(log(series))))
+  } else if (code == 7) {
+    return(mdiff(series) / dplyr::lag(series, 1) - 1)
+  } else {
+    stop("Invalid transformation code")
+  }
+}
+
+```
+
+- Applying the correct transformation by looping through each variable in the dataset and updating the dataset with the transformed values:
+
+```{r, echo = TRUE}
+
+for (i in 1:nrow(transformation_codes)) {
+  series_name <- transformation_codes$Series[i]
+  code <- transformation_codes$Transformation_Code[i]
+  df[[series_name]] <- apply_transformation(as.numeric(df[[series_name]]), code)
+}
+
+#Clean the DataFrame:
+df_cleaned <- df[-c(1:3), ]
+head(df_cleaned)
+View(df_cleaned)
+#by removing rows 1 to 3, since the first row contains the transformation codes and
+#the second and third rows contain missing values due to the first and second difference transformations
+
+```
+
+## Plot transformed series
+
+-Consider three series (`INDPRO`, `CPIAUCSL`, `TB3MS`), re-assigning them their names (“Industrial Production Index”, “Inflation (CPI)”, “3-month Treasury Bill rate.”):
+
+```{r, echo = TRUE}
+
+series_to_plot <- c('INDPRO', 'CPIAUCSL', 'TB3MS')
+series_names <- c('Industrial Production', 'Inflation (CPI)', '3-month Treasury Bill rate')
+
+```
+
+-Parse dates with year, month, and day component, converting the `sasdate` column to `datetime` format:
+
+```{r, echo = TRUE}
+
+class(df_cleaned$sasdate)  # Output: "character"
+plot_data <- df_cleaned %>%
+  select(sasdate, all_of(series_to_plot)) %>%
+  pivot_longer(-sasdate, names_to = "series", values_to = "value") %>%
+  mutate(sasdate =mdy(sasdate),
+         series_name = factor(series, levels = series_to_plot, labels = series_names))
+
+df_cleaned <- df_cleaned %>%
+  mutate(sasdate = as.Date(sasdate, format = "%m/%d/%Y")) 
+print(head(df_cleaned$sasdate))
+
+class(df_cleaned$sasdate) # Output: "Date"
+
+```
+
+-Ensure clean data for forecasting, by removing missing values:
+
+```{r, echo = TRUE}
+
+df_cleaned <- df_cleaned %>%
+  filter(!is.na(INDPRO) & !is.na(CPIAUCSL) & !is.na(TB3MS))
+
+print(paste("Rows after removing missing values:", nrow(df_cleaned))) 
+
+```
+
+-Plot each series against the `sasdate` on the corresponding subplot, by rotating the x-axis labels by 45 degrees to prevent overlapping and improving legibility:
+
+```{r, echo = TRUE}
+#| column: screen-inset-shaded
+#| layout-nrow: 1
+#| fig-width: 11
+#| fig-height: 5
+
+ggplot(plot_data, aes(x = sasdate, y = value, color = series_name)) +
+  geom_line() +
+  scale_color_manual(values = c("Industrial Production" = "cornflowerblue",
+                                "Inflation (CPI)" = "slateblue4",
+                                "3-month Treasury Bill rate" = "turquoise4")) +
+  facet_wrap(~series_name, scales = "free") +
+  labs(title = "Economic Indicators", x = "Year", y = "Transformed Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")  #centering the title and making it bold
+  )
+
+```
+
+# Forecasting in Time Series {background="#2A2E35"}
+
+## ARX Model
+
+The **Autoregressive with Exogenous Variables Model** is a time series regression model 
+that extends the Autoregressive (AR) model by incorporating external (exogenous) variables as predictors
+
+```{r, echo = TRUE}
+
+#Prepare data for estimation:
+Yraw <- df_cleaned$INDPRO
+Xraw <- df_cleaned %>% select(CPIAUCSL, TB3MS)
+#forecasting target variable Industrial Production (INDPRO) using external variables Inflation (CPI) and Treasury Bill Rate (TB3MS)
+
+num_lags <- 4  # Number of lags (p) for autoregressive model
+num_leads <- 1  # Forecast horizon (h-step ahead forecast)
+
+#Create a dataframe X with a constant column (Ones) for the intercept term in regression:
+X <- data.frame(Ones = rep(1, nrow(df_cleaned)))
+
+#Create Lagged Variables for INDPRO (Target Variable):
+for (lag in 0:num_lags) {
+  X[paste0('INDPRO_lag', lag)] <- dplyr::lag(Yraw, lag)
+}
+
+#Create Lagged Variables for CPIAUCSL and TB3MS (Exogenous Predictors):
+for (col in names(Xraw)) {
+  for (lag in 0:num_lags) {
+    X[paste0(col, '_lag', lag)] <- dplyr::lag(Xraw[[col]], lag)
+  }
+}
+
+#Define the Target Variable for Forecasting:
+y <-dplyr::lead(Yraw, num_leads)
+
+#Prepare the Last Row of X for Forecasting:
+X_T <-as.matrix(tail(X, 1))
+#extracting the last row of X as a matrix (X_T), this will be used to compute the one-step-ahead prediction, since the last available data is used to predict the next period.
+
+#Removing NA rows (due to lagging/leading):
+complete_cases <- complete.cases(X, y)
+X <-X[complete_cases, ]
+y <-y[complete_cases]
+#complete.cases(X, y) identifies the rows without missing values
+
+```
+
+## Evaluation Of the Forecast
+
+### Estimation and Forecast
+  
+The OLS estimator of $\boldsymbol{\beta}$ is 
+$$ \hat{\boldsymbol{\beta}} = (X'X)^{-1}X'Y.
+$$
+
+```{r, echo = TRUE}  
+
+#The parameters of the model can be estimated by OLS,
+#but OLS calculations require numeric vector/matrix inputs.
+#This ensures compatibility with matrix operations:
+y <-as.vector(y) #ensures that y is a numeric vector
+X <-as.matrix(X) #converts X into a numeric matrix
+
+#Solving for the OLS estimator beta: (X'X)^{-1} X'Y
+beta_ols <-solve(crossprod(X), crossprod(X, y))
+#this estimates the best-fit parameters (β_ols) for the model.
+#These parameters tell us how past values of INDPRO, CPI, and TB3MS influence future values of INDPRO.
+
+#Compute the One Step Ahead Forecast (% change month-to-month INDPRO)
+forecast <-(X_T %*% beta_ols) * 100
+forecast
+#forecasting the percentage change (and multiplying by 100 gives the forecast in percentage points),
+#since INDPRO has been transformed in logarithmic differences
+
+```
+
+The variable `forecast` contains now the one-step ahead (h=1) forecast of `INDPRO` 
+
+## How good is the forecast that the model is producing? 
+
+-Assessment by using **Real-time Evaluation Procedure of the Model**, whose results are a series of forecasting errors evaluable using several metrics. 
+The most commonly used are the **MSFE** (Mean Squared Forecast Error) and the **RMSFE** (Root Mean Squared Forecast Error)
+
+-Perform a real-time evaluation assessment of the forecasting model, calculating the MSFE and RMSFE for steps $h=1,4,8$  
+
+-Define a Forecasting Function, which:
+
+::: nonincremental
+-   Takes the cleaned dataset
+-   Uses a specified number of lags (p)
+-   Forecasts INDPRO for h = 1, 4, 8 months ahead
+-   Returns forecasting errors (difference between predicted and actual values)
+:::
+ 
+```{r, echo = TRUE}
+
+#Function to perform real-time forecasting and calculate MSFE and RMSFE:
+calculate_forecast_errors <- function(df_cleaned, num_lags, horizons) {
+  
+  # Forecast INDPRO using its past values and external economic indicators:
+  Yraw <- df_cleaned$INDPRO
+  Xraw <- df_cleaned %>% select(CPIAUCSL, TB3MS)
+  
+  # Create lagged variables
+  #The ARX model needs past values to make forecasts
+  #Lagging helps capture time-dependent relationships
+  X <- data.frame(Ones = rep(1, nrow(df_cleaned)))
+  
+  for (lag in 0:num_lags) {
+    X[paste0('INDPRO_lag', lag)] <- dplyr::lag(Yraw, lag)
+  }
+  
+  for (col in names(Xraw)) {
+    for (lag in 0:num_lags) {
+      X[paste0(col, '_lag', lag)] <- dplyr::lag(Xraw[[col]], lag)
+    }
+  }
+  
+  # Prepare to store MSFE and RMSFE results:
+  forecast_errors <- data.frame(Horizon = horizons, MSFE = NA, RMSFE = NA)
+  
+  # Loop over different forecasting horizons
+  # Evaluate forecast accuracy for different time steps
+  for (i in seq_along(horizons)) {
+    h <- horizons[i]
+    
+    # Define the Target (y) at Each Forecast Horizon
+    y <- dplyr::lead(Yraw, h)
+    
+    # Remove NA rows due to lagging/leading:
+    complete_cases <- complete.cases(X, y)
+    X_train <- as.matrix(X[complete_cases, ])
+    y_train <- as.vector(y[complete_cases])
+    
+    # Estimate OLS coefficients:
+    beta_ols <- solve(crossprod(X_train), crossprod(X_train, y_train))
+    
+    # Generate forecasts:
+    y_pred <- X_train %*% beta_ols
+    
+    # Compute MSFE and RMSFE:
+    msfe <- mean((y_pred - y_train)^2) #MSFE measures average squared error (the lower the better)
+    rmsfe <- sqrt(msfe) #RMSFE is the square root of MSFE (easier to interpret)
+    
+    # Store results:
+    forecast_errors$MSFE[i] <- msfe
+    forecast_errors$RMSFE[i] <- rmsfe
+  }
+  
+  return(forecast_errors)
+}
+
+```
+
+-Example Output: *Forecast Error Table*
+
+```{r, echo = TRUE}
+
+#Define lag length and forecast horizons:
+num_lags <- 4
+horizons <- c(1, 4, 8) 
+
+#Compute MSFE and RMSFE for different horizons:
+forecast_error_values <- calculate_forecast_errors(df_cleaned, num_lags, horizons)
+
+#Print results:
+print(forecast_error_values) 
+
+```
+
+## Plot MSFE and RMSFE
+
+```{r, echo = TRUE}
+
+#Reshape the data from wide format to long format, since ggplot2 requires long format data 
+#for plotting multiple variables:
+forecast_error_long <- forecast_error_values %>%
+  pivot_longer(cols = c("MSFE", "RMSFE"), names_to = "Error_Type", values_to = "Value")
+forecast_error_long
+
+```
+
+### Create a dual-axis plot 
+  
+The **secondary y-axis plot** is a type of chart that allows to plot two different variables with different scales on the same graph. 
+It is useful when the values of the two variables differ significantly in magnitude,
+ensuring that both MSFE (small values) and RMSFE (larger values) are properly scaled
+
+```{r echo=TRUE} 
+#| column: screen-inset-shaded
+#| layout-nrow: 1
+#| fig-width: 5
+#| fig-height: 7
+ 
+ggplot(forecast_error_long, aes(x = factor(Horizon), y = Value, color = Error_Type, group = Error_Type)) +
+  geom_point(size = 3) +  #adds points at each forecast horizon
+  geom_line(size = 1.2) + #connects points with lines for better readability
+  
+  # Scale the y-axis properly: primary y-axis (left) displaying MSFE, secondary y-axis (right) displaying RMSFE
+  scale_y_continuous(  
+    name = "MSFE (×1000)", #scaled by 1000 for better visibility
+    labels = scales::comma, #ensures large numbers with commas
+    sec.axis = sec_axis(~.*100, name = "RMSFE (Percentage Points)")  #multiplied by 100 to show percentage points
+  ) +
+  labs(title = "Forecast Error Comparison (MSFE vs RMSFE)", 
+       x = "Forecast Horizon (h)") +
+  scale_color_manual(values = c("MSFE" = "violetred3", "RMSFE" = "mediumorchid")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",   
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")  #centering the title and making it bold
+  )  
+knitr::kable(forecast_error_values)      
+
+```
