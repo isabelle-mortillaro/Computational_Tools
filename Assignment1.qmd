@@ -5,10 +5,10 @@ author: "Isabelle Mortillaro"
 format:     
   revealjs: 
     transition: fade                   
-    smaller: true    
+    smaller: true   
     scrollable: true
     chalkboard:   
-      theme: chalkboard 
+      theme: chalkboard
     theme: dark   
     page-layout: article    
     # slide-tone: true  
@@ -20,7 +20,7 @@ format:
 
 ```{r, echo = TRUE}
 
-library(readr) 
+library(readr)  
 library(dplyr)   
 library(ggplot2)
 library(ggthemes)
@@ -177,8 +177,8 @@ ggplot(plot_data, aes(x = sasdate, y = value, color = series_name)) +
   theme_economist_white() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom",
-    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")  #centering the title and making it bold
-  )
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold")  #centering the title and making it bold
+  ) 
 
 ```
 
@@ -230,7 +230,7 @@ y <-y[complete_cases]
 ```
 
 ## Evaluation Of the Forecast
-
+ 
 ### Estimation and Forecast
   
 The OLS estimator of $\boldsymbol{\beta}$ is 
