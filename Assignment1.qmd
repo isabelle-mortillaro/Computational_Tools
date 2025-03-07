@@ -4,11 +4,11 @@ subtitle: "Assignment 1"
 author: "Isabelle Mortillaro"
 format:     
   revealjs: 
-    transition: fade                    
+    transition: fade                   
     smaller: true   
     scrollable: true
     chalkboard:   
-      theme: chalkboard
+      theme: chalkboard 
     theme: dark   
     page-layout: article    
     # slide-tone: true  
@@ -23,6 +23,7 @@ format:
 library(readr) 
 library(dplyr)   
 library(ggplot2)
+library(ggthemes)
 library(lubridate)
 library(tidyr)
 
@@ -173,7 +174,7 @@ ggplot(plot_data, aes(x = sasdate, y = value, color = series_name)) +
                                 "3-month Treasury Bill rate" = "turquoise4")) +
   facet_wrap(~series_name, scales = "free") +
   labs(title = "Economic Indicators", x = "Year", y = "Transformed Value") +
-  theme_minimal() +
+  theme_economist_white() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom",
     plot.title = element_text(hjust = 0.5, size = 14, face = "bold")  #centering the title and making it bold
@@ -264,14 +265,14 @@ The variable `forecast` contains now the one-step ahead (h=1) forecast of `INDPR
 -Assessment by using **Real-time Evaluation Procedure of the Model**, whose results are a series of forecasting errors evaluable using several metrics. 
 The most commonly used are the **MSFE** (Mean Squared Forecast Error) and the **RMSFE** (Root Mean Squared Forecast Error)
 
--Perform a real-time evaluation assessment of the forecasting model, calculating the MSFE and RMSFE for steps $h=1,4,8$  
+-Perform a real-time evaluation assessment of the forecasting model, calculating the MSFE and RMSFE for steps $h=1,3,7$  
 
 -Define a Forecasting Function, which:
 
 ::: nonincremental
 -   Takes the cleaned dataset
 -   Uses a specified number of lags (p)
--   Forecasts INDPRO for h = 1, 4, 8 months ahead
+-   Forecasts INDPRO for h = 1, 3, 7 months ahead
 -   Returns forecasting errors (difference between predicted and actual values)
 :::
  
@@ -340,8 +341,8 @@ calculate_forecast_errors <- function(df_cleaned, num_lags, horizons) {
 ```{r, echo = TRUE}
 
 #Define lag length and forecast horizons:
-num_lags <- 4
-horizons <- c(1, 4, 8) 
+num_lags <- 5
+horizons <- c(1, 3, 7) 
 
 #Compute MSFE and RMSFE for different horizons:
 forecast_error_values <- calculate_forecast_errors(df_cleaned, num_lags, horizons)
@@ -374,7 +375,7 @@ ensuring that both MSFE (small values) and RMSFE (larger values) are properly sc
 #| layout-nrow: 1
 #| fig-width: 5
 #| fig-height: 7
- 
+
 ggplot(forecast_error_long, aes(x = factor(Horizon), y = Value, color = Error_Type, group = Error_Type)) +
   geom_point(size = 3) +  #adds points at each forecast horizon
   geom_line(size = 1.2) + #connects points with lines for better readability
@@ -388,11 +389,11 @@ ggplot(forecast_error_long, aes(x = factor(Horizon), y = Value, color = Error_Ty
   labs(title = "Forecast Error Comparison (MSFE vs RMSFE)", 
        x = "Forecast Horizon (h)") +
   scale_color_manual(values = c("MSFE" = "violetred3", "RMSFE" = "mediumorchid")) +
-  theme_minimal() +
+  theme_economist_white() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "bottom",   
     plot.title = element_text(hjust = 0.5, size = 14, face = "bold")  #centering the title and making it bold
   )  
-knitr::kable(forecast_error_values)      
+knitr::kable(forecast_error_values)       
 
 ```
