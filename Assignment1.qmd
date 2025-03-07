@@ -5,7 +5,7 @@ author: "Isabelle Mortillaro"
 format:     
   revealjs: 
     transition: fade                   
-    smaller: true   
+    smaller: true    
     scrollable: true
     chalkboard:   
       theme: chalkboard 
